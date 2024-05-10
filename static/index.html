@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Image Processing</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 0;
+            text-align: center;
+        }
+
+        header {
+            background-color: #5cb85c;
+            color: white;
+            padding: 15px 0;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            margin: 0;
+        }
+
+        #drop-area {
+            border: 2px dashed #5cb85c;
+            border-radius: 10px;
+            width: 80%;
+            margin: 20px auto;
+            padding: 20px;
+            text-align: center;
+            background-color: white;
+            transition: border 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #drop-area.active {
+            border: 2px solid #5cb85c;
+        }
+
+        #csv-table {
+            width: 80%;
+            margin: 20px auto;
+            border-collapse: collapse;
+            text-align: left;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #csv-table th, #csv-table td {
+            border: 1px solid #ccc;
+            padding: 8px;
+        }
+
+        #fileSelect {
+            margin-top: 10px;
+            padding: 8px 16px;
+            background-color: #5cb85c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #results {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            padding: 0;
+            margin: 20px auto;
+            list-style: none;
+        }
+
+        .result-item {
+            position: relative;
+            margin: 10px;
+            text-align: center;
+            max-width: 160px;
+        }
+
+        .result-item img {
+            max-width: 150px;
+            max-height: 150px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status-icon {
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background-color: lightgray;
+            text-align: center;
+            font-size: 14px;
+            color: white;
+        }
+
+        .processing {
+            background-color: yellow;
+        }
+
+        .done {
+            background-color: lightgreen;
+        }
+
+        .error {
+            background-color: lightcoral;
+        }
+
+        #csv-link {
+            margin: 20px auto;
+            padding: 10px 20px;
+/*             display: block; */
+            text-align: center;
+            background-color: #5cb85c;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        #csv-link:hover {
+            background-color: #4cae4c;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Invoice Extractor</h1>
+    </header>
+    <div>
+        <table id="csv-table">
+            <thead id="csv-table-head">
+                <tr>
+                    <th>Image</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+        <a id="csv-link" download="results.csv">Download CSV</a>
+    </div>
+    <div id="drop-area">
+        <h2>Drag and Drop Images Here</h2>
+        <input type="file" id="fileElem" multiple accept="image/*" style="display:none" onchange="handleFiles(this.files)">
+        <button id="fileSelect">Select Files</button>
+        <ul id="results"></ul>
+    </div>
+    
+
+    <script>
+        const fileSelect = document.getElementById("fileSelect");
+        const dropArea = document.getElementById("drop-area");
+        const resultsList = document.getElementById("results");
+        const csvLink = document.getElementById("csv-link");
+        const csvTableBody = document.querySelector("#csv-table tbody");
+        const csvTableHead = document.getElementById("csv-table-head");
+        let processingKeys = []; // Keys found in processing_details
+        let csvContent = "";
+
+        fileSelect.addEventListener("click", () => document.getElementById("fileElem").click());
+
+        dropArea.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropArea.classList.add("active");
+        });
+
+        dropArea.addEventListener("dragleave", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            dropArea.classList.remove("active");
+        });
+
+        dropArea.addEventListener("drop", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const files = event.dataTransfer.files;
+            handleFiles(files);
+            dropArea.classList.remove("active");
+        });
+
+        async function handleFiles(files) {
+            // Create a queue and process each file sequentially
+            for (const file of files) {
+                const listItem = createListItem(file);
+                await processImage(file, listItem);
+            }
+            updateCsvLink();
+        }
+
+        function createListItem(file) {
+            const listItem = document.createElement("li");
+            listItem.classList.add("result-item");
+
+            const image = document.createElement("img");
+            image.src = URL.createObjectURL(file);
+            listItem.appendChild(image);
+
+            const statusIcon = document.createElement("div");
+            statusIcon.classList.add("status-icon", "processing");
+            statusIcon.textContent = "⌛";
+            listItem.appendChild(statusIcon);
+
+            resultsList.appendChild(listItem);
+
+            return listItem;
+        }
+
+        async function processImage(file, listItem) {
+            const statusIcon = listItem.querySelector(".status-icon");
+
+            try {
+                const formData = new FormData();
+                formData.append("image", file);
+                // Replace 'YOUR_API_ENDPOINT' with the actual API URL
+                const response = await fetch("/process_image", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!response.ok) throw new Error("Failed to process image");
+
+                const jsonResponse = await response.json();
+                const processingDetails = jsonResponse.processing_details;
+
+                // Initialize the processing keys based on the first successful response
+                if (processingKeys.length === 0) {
+                    processingKeys = Object.keys(processingDetails);
+                    setUpCsvHeaders();
+                }
+
+                statusIcon.textContent = "✔";
+                statusIcon.classList.remove("processing");
+                statusIcon.classList.add("done");
+
+                // Add a row to the CSV table and update the CSV content
+                addRowToCsvTable(file.name, jsonResponse.status, jsonResponse.message, processingDetails);
+            } catch (error) {
+                statusIcon.textContent = "✘";
+                statusIcon.classList.remove("processing");
+                statusIcon.classList.add("error");
+
+                addRowToCsvTable(file.name, "Failure", error.message, {});
+            }
+        }
+
+        function setUpCsvHeaders() {
+            // Clear any existing headers
+            csvTableHead.innerHTML = "<tr><th>Image</th><th>Status</th><th>Message</th></tr>";
+            csvContent = "data:text/csv;charset=utf-8,Image,Status,Message";
+            processingKeys.forEach(key => {
+                csvTableHead.querySelector("tr").innerHTML += `<th>${key}</th>`;
+                csvContent += `,${key}`;
+            });
+            csvContent += "\n";
+        }
+
+        function addRowToCsvTable(imageName, status, message, processingDetails) {
+            // Create a new row
+            const row = document.createElement("tr");
+            let csvRow = `${imageName},${status},${message}`;
+
+            // Fill the processing details
+            processingKeys.forEach(key => {
+                const value = processingDetails[key] || "";
+                row.innerHTML += `<td>${value}</td>`;
+                csvRow += `,${value}`;
+            });
+
+            row.innerHTML = `<td>${imageName}</td><td>${status}</td><td>${message}</td>` + row.innerHTML;
+            csvTableBody.appendChild(row);
+
+            csvContent += `${csvRow}\n`;
+        }
+
+        function updateCsvLink() {
+            csvLink.setAttribute("href", encodeURI(csvContent));
+        }
+    </script>
+</body>
+</html>
